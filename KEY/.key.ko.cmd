@@ -1,0 +1,1 @@
+cmd_/home/yuri/SDK/IMX6ULL/DriverC/KEY/key.ko := arm-linux-gnueabihf-ld -EL -r  -T ./scripts/module-common.lds --build-id  -o /home/yuri/SDK/IMX6ULL/DriverC/KEY/key.ko /home/yuri/SDK/IMX6ULL/DriverC/KEY/key.o /home/yuri/SDK/IMX6ULL/DriverC/KEY/key.mod.o

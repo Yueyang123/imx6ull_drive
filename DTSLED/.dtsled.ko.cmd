@@ -1,0 +1,1 @@
+cmd_/home/yuri/SDK/IMX6ULL/DriverC/DTSLED/dtsled.ko := arm-linux-gnueabihf-ld -EL -r  -T ./scripts/module-common.lds --build-id  -o /home/yuri/SDK/IMX6ULL/DriverC/DTSLED/dtsled.ko /home/yuri/SDK/IMX6ULL/DriverC/DTSLED/dtsled.o /home/yuri/SDK/IMX6ULL/DriverC/DTSLED/dtsled.mod.o

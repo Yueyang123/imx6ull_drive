@@ -1,0 +1,1 @@
+cmd_/home/yuri/SDK/IMX6ULL/DriverC/NEWCHRLED/newchrled.ko := arm-linux-gnueabihf-ld -EL -r  -T ./scripts/module-common.lds --build-id  -o /home/yuri/SDK/IMX6ULL/DriverC/NEWCHRLED/newchrled.ko /home/yuri/SDK/IMX6ULL/DriverC/NEWCHRLED/newchrled.o /home/yuri/SDK/IMX6ULL/DriverC/NEWCHRLED/newchrled.mod.o

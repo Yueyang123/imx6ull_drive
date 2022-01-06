@@ -1,0 +1,42 @@
+{
+    "editor.suggestSelection": "first",
+    "workbench.colorTheme": "Monokai Dimmed",
+    "files.exclude": {
+        "**/.classpath": true,
+        "**/.project": true,
+        "**/.settings": true,
+        "**/.factorypath": true
+    },
+    "fileheader.customMade": {    //此为头部注释
+        "Description": "",
+        "Autor": "YURI",
+        "Date": "Do not edit",
+        "LastEditors": "YURI",
+        "LastEditTime": "Do not edit"
+    },
+    "fileheader.cursorMode": {  //此为函数注释
+        "description":"",
+        "param": "",
+        "return": "",
+        "author":"YURI"
+    },
+    "fileheader.configObj": {
+        "autoAdd": true, // 默认开启自动添加头部注释，当文件没有设置头部注释时保存会自动添加
+        "autoAlready": true, // 默认开启
+        "prohibitAutoAdd": [
+            "json",
+            "md"
+        ], // 禁止.json .md文件，自动添加头部注释
+        "wideSame": false, // 设置为true开启
+        "wideNum": 13 // 字段长度 默认为13
+    },
+    "python.languageServer": "Pylance",
+    "html.format.contentUnformatted": "",
+    "C_Cpp.errorSquiggles": "Enabled",
+    "files.encoding": "utf8",
+    "cmake.configureOnOpen": true,
+    "files.associations": {
+        "gpio.h": "c",
+        "stdlib.h": "c"
+    }
+}

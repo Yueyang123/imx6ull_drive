@@ -1,0 +1,1 @@
+cmd_/home/yuri/SDK/IMX6ULL/DriverC/BEEP/beep.ko := arm-linux-gnueabihf-ld -EL -r  -T ./scripts/module-common.lds --build-id  -o /home/yuri/SDK/IMX6ULL/DriverC/BEEP/beep.ko /home/yuri/SDK/IMX6ULL/DriverC/BEEP/beep.o /home/yuri/SDK/IMX6ULL/DriverC/BEEP/beep.mod.o
