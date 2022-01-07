@@ -1,0 +1,1 @@
+cmd_/home/yuri/SDK/IMX6ULL/DriverC/BLOCK/blockio.ko := arm-linux-gnueabihf-ld -EL -r  -T ./scripts/module-common.lds --build-id  -o /home/yuri/SDK/IMX6ULL/DriverC/BLOCK/blockio.ko /home/yuri/SDK/IMX6ULL/DriverC/BLOCK/blockio.o /home/yuri/SDK/IMX6ULL/DriverC/BLOCK/blockio.mod.o

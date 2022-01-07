@@ -2482,3 +2482,503 @@ module_exit(led_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("zuozhongkai");
 ```
+
+# LINUX中断实验
+## Linux 中断简介
+### Linux 中断 API 函数
+先来回顾一下裸机实验里面中断的处理方法：
+①、使能中断，初始化相应的寄存器。
+②、注册中断服务函数，也就是向 irqTable 数组的指定标号处写入中断服务函数
+②、中断发生以后进入 IRQ 中断服务函数，在 IRQ 中断服务函数在数组 irqTable 里面查找
+具体的中断处理函数，找到以后执行相应的中断处理函数。
+在 Linux 内核中也提供了大量的中断相关的 API 函数，我们来看一下这些跟中断有关的
+API 函数：
+1、中断号
+每个中断都有一个中断号，通过中断号即可区分不同的中断，有的资料也把中断号叫做中
+断线。在 Linux 内核中使用一个 int 变量表示中断号，关于中断号我们已经在第十七章讲解过
+了。
+2、request_irq 函数
+在 Linux 内核中要想使用某个中断是需要申请的，request_irq 函数用于申请中断，request_irq
+函数可能会导致睡眠，因此不能在中断上下文或者其他禁止睡眠的代码段中使用 request_irq 函
+数。request_irq 函数会激活(使能)中断，所以不需要我们手动去使能中断，request_irq 函数原型
+如下：
+int request_irq(unsigned int irq, 
+irq_handler_t handler, 
+unsigned long flags,
+ const char *name, 
+void *dev)
+函数参数和返回值含义如下：
+irq：要申请中断的中断号。
+handler：中断处理函数，当中断发生以后就会执行此中断处理函数。
+flags：中断标志，可以在文件 include/linux/interrupt.h 里面查看所有的中断标志，这里我们
+介绍几个常用的中断标志
+比如 I.MX6U-ALPHA 开发板上的 KEY0 使用 GPIO1_IO18，按下 KEY0 以后为低电平，因
+此可以设置为下降沿触发，也就是将 flags 设置为 IRQF_TRIGGER_FALLING。表 51.1.1.1 中的
+这些标志可以通过“|”来实现多种组合。
+name：中断名字，设置以后可以在/proc/interrupts 文件中看到对应的中断名字。
+dev：如果将 flags 设置为 IRQF_SHARED 的话，dev 用来区分不同的中断，一般情况下将
+dev 设置为设备结构体，dev 会传递给中断处理函数 irq_handler_t 的第二个参数。
+返回值：0 中断申请成功，其他负值 中断申请失败，如果返回-EBUSY 的话表示中断已经
+被申请了。
+3、free_irq 函数
+使用中断的时候需要通过 request_irq 函数申请，使用完成以后就要通过 free_irq 函数释放
+掉相应的中断。如果中断不是共享的，那么 free_irq 会删除中断处理函数并且禁止中断。free_irq
+函数原型如下所示：
+void free_irq(unsigned int irq, 
+void *dev)
+函数参数和返回值含义如下：
+irq：要释放的中断。
+dev：如果中断设置为共享(IRQF_SHARED)的话，此参数用来区分具体的中断。共享中断
+只有在释放最后中断处理函数的时候才会被禁止掉。
+返回值：无。
+4、中断处理函数
+使用 request_irq 函数申请中断的时候需要设置中断处理函数，中断处理函数格式如下所示：
+irqreturn_t (*irq_handler_t) (int, void *)
+第一个参数是要中断处理函数要相应的中断号。第二个参数是一个指向 void 的指针，也就
+是个通用指针，需要与 request_irq 函数的 dev 参数保持一致。用于区分共享中断的不同设备，
+dev 也可以指向设备数据结构。中断处理函数的返回值为 irqreturn_t 类型，irqreturn_t 类型定义
+如下所示：
+return IRQ_RETVAL(IRQ_HANDLED)
+5、中断使能与禁止函数
+常用的中断使用和禁止函数如下所示：
+void enable_irq(unsigned int irq)
+void disable_irq(unsigned int irq)
+enable_irq 和 disable_irq 用于使能和禁止指定的中断，irq 就是要禁止的中断号。disable_irq
+函数要等到当前正在执行的中断处理函数执行完才返回，因此使用者需要保证不会产生新的中
+断，并且确保所有已经开始执行的中断处理程序已经全部退出。在这种情况下，可以使用另外
+一个中断禁止函数：
+void disable_irq_nosync(unsigned int irq)
+disable_irq_nosync 函数调用以后立即返回，不会等待当前中断处理程序执行完毕。上面三
+个函数都是使能或者禁止某一个中断，有时候我们需要关闭当前处理器的整个中断系统，也就
+是在学习 STM32 的时候常说的关闭全局中断，这个时候可以使用如下两个函数：
+local_irq_enable()
+local_irq_disable()
+local_irq_enable 用于使能当前处理器中断系统，local_irq_disable 用于禁止当前处理器中断
+系统。假如 A 任务调用 local_irq_disable 关闭全局中断 10S，当关闭了 2S 的时候 B 任务开始运
+行，B 任务也调用 local_irq_disable 关闭全局中断 3S，3 秒以后 B 任务调用 local_irq_enable 函
+数将全局中断打开了。此时才过去 2+3=5 秒的时间，然后全局中断就被打开了，此时 A 任务要
+关闭 10S 全局中断的愿望就破灭了，然后 A 任务就“生气了”，结果很严重，可能系统都要被
+A 任务整崩溃。为了解决这个问题，B 任务不能直接简单粗暴的通过 local_irq_enable 函数来打
+开全局中断，而是将中断状态恢复到以前的状态，要考虑到别的任务的感受，此时就要用到下
+面两个函数：
+local_irq_save(flags)
+local_irq_restore(flags)
+这两个函数是一对，local_irq_save 函数用于禁止中断，并且将中断状态保存在 flags 中。
+local_irq_restore 用于恢复中断，将中断到 flags 状态。
+
+### 上半部与下半部
+
+在有些资料中也将上半部和下半部称为顶半部和底半部，都是一个意思。我们在使用
+request_irq 申请中断的时候注册的中断服务函数属于中断处理的上半部，只要中断触发，那么
+中断处理函数就会执行。我们都知道中断处理函数一定要快点执行完毕，越短越好，但是现实
+往往是残酷的，有些中断处理过程就是比较费时间，我们必须要对其进行处理，缩小中断处理
+函数的执行时间。比如电容触摸屏通过中断通知 SOC 有触摸事件发生，SOC 响应中断，然后
+通过 IIC 接口读取触摸坐标值并将其上报给系统。但是我们都知道 IIC 的速度最高也只有
+400Kbit/S，所以在中断中通过 IIC 读取数据就会浪费时间。我们可以将通过 IIC 读取触摸数据
+的操作暂后执行，中断处理函数仅仅相应中断，然后清除中断标志位即可。这个时候中断处理
+过程就分为了两部分：
+上半部：上半部就是中断处理函数，那些处理过程比较快，不会占用很长时间的处理就可
+以放在上半部完成。
+下半部：如果中断处理过程比较耗时，那么就将这些比较耗时的代码提出来，交给下半部
+去执行，这样中断处理函数就会快进快出。
+1、软中断
+一开始 Linux 内核提供了“bottom half”机制来实现下半部，简称“BH”。后面引入了软中
+断和 tasklet 来替代“BH”机制，完全可以使用软中断和 tasklet 来替代 BH，从 2.5 版本的 Linux
+内核开始 BH 已经被抛弃了。Linux 内核使用结构体 softirq_action 表示软中断， softirq_action
+结构体定义在文件 include/linux/interrupt.h 中
+2、tasklet
+tasklet 是利用软中断来实现的另外一种下半部机制，在软中断和 tasklet 之间，建议大家使
+用 tasklet。Linux 内核使用 tasklet_struct 结构体来表示 tasklet
+3、工作队列
+工作队列是另外一种下半部执行方式，工作队列在进程上下文执行，工作队列将要推后的
+工作交给一个内核线程去执行，因为工作队列工作在进程上下文，因此工作队列允许睡眠或重
+新调度。因此如果你要推后的工作可以睡眠那么就可以选择工作队列，否则的话就只能选择软
+中断或 tasklet
+
+
+# LINUX非阻塞IO
+
+ 阻塞和非阻塞简介
+这里的“IO”并不是我们学习 STM32 或者其他单片机的时候所说的“GPIO”(也就是引脚)。
+这里的 IO 指的是 Input/Output，也就是输入/输出，是应用程序对驱动设备的输入/输出操作。当
+应用程序对设备驱动进行操作的时候，如果不能获取到设备资源，那么阻塞式 IO 就会将应用程
+序对应的线程挂起，直到设备资源可以获取为止。对于非阻塞 IO，应用程序对应的线程不会挂
+起，它要么一直轮询等待，直到设备资源可以使用，要么就直接放弃。阻塞式 IO 如图 52.1.1.1
+所示：
+应用程序使用非阻塞访问方式从设备读取数据，当设备不可用或
+数据未准备好的时候会立即向内核返回一个错误码，表示数据读取失败。应用程序会再次重新
+读取数据，这样一直往复循环，直到数据读取成功。
+
+1 int fd;
+2 int data = 0;
+3
+4 fd = open("/dev/xxx_dev", O_RDWR); /* 阻塞方式打开 */
+5 ret = read(fd, &data, sizeof(data)); /* 读取数据 */
+
+对于设备驱动文件的默认读取方式就是阻塞式的，所以我
+们前面所有的例程测试 APP 都是采用阻塞 IO。
+如果应用程序要采用非阻塞的方式来访问驱动设备文件，可以使用如下所示代码：
+
+1 int fd;
+2 int data = 0;
+3
+4 fd = open("/dev/xxx_dev", O_RDWR | O_NONBLOCK); /* 非阻塞方式打开 */
+5 ret = read(fd, &data, sizeof(data)); /* 读取数据 */
+
+
+## 轮询
+如果用户应用程序以非阻塞的方式访问设备，设备驱动程序就要提供非阻塞的处理方式，
+也就是轮询。poll、epoll 和 select 可以用于处理轮询，应用程序通过 select、epoll 或 poll 函数来
+查询设备是否可以操作，如果可以操作的话就从设备读取或者向设备写入数据。当应用程序调
+用 select、epoll 或 poll 函数的时候设备驱动程序中的 poll 函数就会执行，因此需要在设备驱动
+程序中编写 poll 函数。我们先来看一下应用程序中使用的 select、poll 和 epoll 这三个函数。
+
+1、select 函数
+select 函数原型如下：
+int select(int nfds, 
+fd_set *readfds, 
+fd_set *writefds,
+fd_set *exceptfds, 
+struct timeval *timeout)
+函数参数和返回值含义如下：
+nfds：所要监视的这三类文件描述集合中，最大文件描述符加 1。
+readfds、writefds 和 exceptfds：这三个指针指向描述符集合，这三个参数指明了关心哪些
+描述符、需要满足哪些条件等等，这三个参数都是 fd_set 类型的，fd_set 类型变量的每一个位
+都代表了一个文件描述符。readfds 用于监视指定描述符集的读变化，也就是监视这些文件是否
+可以读取，只要这些集合里面有一个文件可以读取那么 seclect 就会返回一个大于 0 的值表示文
+件可以读取。如果没有文件可以读取，那么就会根据 timeout 参数来判断是否超时。可以将 readfs
+设置为 NULL，表示不关心任何文件的读变化。writefds 和 readfs 类似，只是 writefs 用于监视
+这些文件是否可以进行写操作。exceptfds 用于监视这些文件的异常。
+比如我们现在要从一个设备文件中读取数据，那么就可以定义一个 fd_set 变量，这个变量
+要传递给参数 readfds。当我们定义好一个 fd_set 变量以后可以使用如下所示几个宏进行操作：
+void FD_ZERO(fd_set *set)
+void FD_SET(int fd, fd_set *set)
+void FD_CLR(int fd, fd_set *set)
+int FD_ISSET(int fd, fd_set *set)
+FD_ZERO 用于将 fd_set 变量的所有位都清零，FD_SET 用于将 fd_set 变量的某个位置 1，
+也就是向 fd_set 添加一个文件描述符，参数 fd 就是要加入的文件描述符。FD_CLR 用于将 fd_set
+
+变量的某个位清零，也就是将一个文件描述符从 fd_set 中删除，参数 fd 就是要删除的文件描述
+符。FD_ISSET 用于测试一个文件是否属于某个集合，参数 fd 就是要判断的文件描述符。
+timeout:超时时间，当我们调用 select 函数等待某些文件描述符可以设置超时时间，超时时
+间使用结构体 timeval 表示，结构体定义如下所示：
+struct timeval {
+long tv_sec; /* 秒 */
+long tv_usec; /* 微妙 */
+};
+当 timeout 为 NULL 的时候就表示无限期的等待。
+返回值：0，表示的话就表示超时发生，但是没有任何文件描述符可以进行操作；-1，发生
+错误；其他值，可以进行操作的文件描述符个数。
+使用 select 函数对某个设备驱动文件进行读非阻塞访问的操作示例如下所示：
+示例代码 52.1.3.1 select 函数非阻塞读访问示例
+1 void main(void)
+2 {
+3 int ret, fd; /* 要监视的文件描述符 */
+4 fd_set readfds; /* 读操作文件描述符集 */
+5 struct timeval timeout; /* 超时结构体 */
+6 
+7 fd = open("dev_xxx", O_RDWR | O_NONBLOCK); /* 非阻塞式访问 */
+8 
+9 FD_ZERO(&readfds); /* 清除 readfds */
+10 FD_SET(fd, &readfds); /* 将 fd 添加到 readfds 里面 */
+11 
+12 /* 构造超时时间 */
+13 timeout.tv_sec = 0;
+14 timeout.tv_usec = 500000; /* 500ms */
+15 
+16 ret = select(fd + 1, &readfds, NULL, NULL, &timeout);
+17 switch (ret) {
+18 case 0: /* 超时 */
+19 printf("timeout!\r\n");
+20 break;
+21 case -1: /* 错误 */
+22 printf("error!\r\n");
+23 break;
+24 default: /* 可以读取数据 */
+25 if(FD_ISSET(fd, &readfds)) { /* 判断是否为 fd 文件描述符 */
+26 /* 使用 read 函数读取数据 */
+27 }
+28 break;
+29 } 
+30 }
+
+2、poll 函数
+在单个线程中，select 函数能够监视的文件描述符数量有最大的限制，一般为 1024，可以
+修改内核将监视的文件描述符数量改大，但是这样会降低效率！这个时候就可以使用 poll 函数，
+poll 函数本质上和 select 没有太大的差别，但是 poll 函数没有最大文件描述符限制，Linux 应用
+程序中 poll 函数原型如下所示：
+int poll(struct pollfd *fds, 
+ nfds_t nfds, 
+ int timeout)
+函数参数和返回值含义如下：
+fds：要监视的文件描述符集合以及要监视的事件,为一个数组，数组元素都是结构体 pollfd
+类型的，pollfd 结构体如下所示：
+struct pollfd {
+int fd; /* 文件描述符 */
+short events; /* 请求的事件 */
+ short revents; /* 返回的事件 */
+};
+fd 是要监视的文件描述符，如果 fd 无效的话那么 events 监视事件也就无效，并且 revents
+返回 0。events 是要监视的事件，可监视的事件类型如下所示：
+POLLIN 有数据可以读取。
+POLLPRI 有紧急的数据需要读取。
+POLLOUT 可以写数据。
+POLLERR 指定的文件描述符发生错误。
+POLLHUP 指定的文件描述符挂起。
+POLLNVAL 无效的请求。
+POLLRDNORM 等同于 POLLIN
+revents 是返回参数，也就是返回的事件，由 Linux 内核设置具体的返回事件。
+nfds：poll 函数要监视的文件描述符数量。
+timeout：超时时间，单位为 ms。
+返回值：返回 revents 域中不为 0 的 pollfd 结构体个数，也就是发生事件或错误的文件描述
+符数量；0，超时；-1，发生错误，并且设置 errno 为错误类型。
+使用 poll 函数对某个设备驱动文件进行读非阻塞访问的操作示例如下所示：
+示例代码 52.1.3.2 poll 函数读非阻塞访问示例
+1 void main(void)
+2 {
+3 int ret; 
+4 int fd; /* 要监视的文件描述符 */
+5 struct pollfd fds; 
+6 
+7 fd = open(filename, O_RDWR | O_NONBLOCK); /* 非阻塞式访问 */
+8 
+9 /* 构造结构体 */
+10 fds.fd = fd;
+11 fds.events = POLLIN; /* 监视数据是否可以读取 */
+12 
+13 ret = poll(&fds, 1, 500); /* 轮询文件是否可操作，超时 500ms */
+14 if (ret) { /* 数据有效 */
+15 ......
+16 /* 读取数据 */
+17 ......
+18 } else if (ret == 0) { /* 超时 */
+19 ......
+20 } else if (ret < 0) { /* 错误 */
+21 ......
+22 }
+23 }
+3、epoll 函数
+传统的 selcet 和 poll 函数都会随着所监听的 fd 数量的增加，出现效率低下的问题，而且
+poll 函数每次必须遍历所有的描述符来检查就绪的描述符，这个过程很浪费时间。为此，epoll
+应运而生，epoll 就是为处理大并发而准备的，一般常常在网络编程中使用 epoll 函数。应用程
+序需要先使用 epoll_create 函数创建一个 epoll 句柄，epoll_create 函数原型如下：
+int epoll_create(int size)
+函数参数和返回值含义如下：
+size：从 Linux2.6.8 开始此参数已经没有意义了，随便填写一个大于 0 的值就可以。
+返回值：epoll 句柄，如果为-1 的话表示创建失败。
+epoll 句柄创建成功以后使用 epoll_ctl 函数向其中添加要监视的文件描述符以及监视的事
+件，epoll_ctl 函数原型如下所示：
+int epoll_ctl(int epfd, 
+ int op, 
+ int fd,
+ struct epoll_event *event)
+函数参数和返回值含义如下：
+epfd：要操作的 epoll 句柄，也就是使用 epoll_create 函数创建的 epoll 句柄。
+op：表示要对 epfd(epoll 句柄)进行的操作，可以设置为：
+EPOLL_CTL_ADD 向 epfd 添加文件参数 fd 表示的描述符。
+EPOLL_CTL_MOD 修改参数 fd 的 event 事件。
+EPOLL_CTL_DEL 从 epfd 中删除 fd 描述符。
+fd：要监视的文件描述符。
+event：要监视的事件类型，为 epoll_event 结构体类型指针，epoll_event 结构体类型如下所
+示：
+struct epoll_event {
+uint32_t events; /* epoll 事件 */
+epoll_data_t data; /* 用户数据 */
+};
+结构体 epoll_event 的 events 成员变量表示要监视的事件，可选的事件如下所示：
+EPOLLIN 有数据可以读取。
+EPOLLOUT 可以写数据。
+EPOLLPRI 有紧急的数据需要读取。
+EPOLLERR 指定的文件描述符发生错误。
+EPOLLHUP 指定的文件描述符挂起。
+EPOLLET 设置 epoll 为边沿触发，默认触发模式为水平触发。
+EPOLLONESHOT 一次性的监视，当监视完成以后还需要再次监视某个 fd，那么就需要将
+fd 重新添加到 epoll 里面。
+上面这些事件可以进行“或”操作，也就是说可以设置监视多个事件。
+返回值：0，成功；-1，失败，并且设置 errno 的值为相应的错误码。
+一切都设置好以后应用程序就可以通过 epoll_wait 函数来等待事件的发生，类似 select 函
+数。epoll_wait 函数原型如下所示：
+int epoll_wait(int epfd, 
+struct epoll_event *events,
+int maxevents, 
+int timeout)
+函数参数和返回值含义如下：
+epfd：要等待的 epoll。
+events：指向 epoll_event 结构体的数组，当有事件发生的时候 Linux 内核会填写 events，调
+用者可以根据 events 判断发生了哪些事件。
+maxevents：events 数组大小，必须大于 0。
+timeout：超时时间，单位为 ms。
+返回值：0，超时；-1，错误；其他值，准备就绪的文件描述符数量。
+epoll 更多的是用在大规模的并发服务器上，因为在这种场合下 select 和 poll 并不适合。当
+设计到的文件描述符(fd)比较少的时候就适合用 selcet 和 poll，本章我们就使用 sellect 和 poll 这
+两个函数。
+
+# 异步通知
+我们首先来回顾一下“中断”，中断是处理器提供的一种异步机制，我们配置好中断以后就
+可以让处理器去处理其他的事情了，当中断发生以后会触发我们事先设置好的中断服务函数，
+在中断服务函数中做具体的处理。比如我们在裸机篇里面编写的 GPIO 按键中断实验，我们通
+过按键去开关蜂鸣器，采用中断以后处理器就不需要时刻的去查看按键有没有被按下，因为按
+键按下以后会自动触发中断。同样的，Linux 应用程序可以通过阻塞或者非阻塞这两种方式来
+访问驱动设备，通过阻塞方式访问的话应用程序会处于休眠态，等待驱动设备可以使用，非阻
+塞方式的话会通过 poll 函数来不断的轮询，查看驱动设备文件是否可以使用。这两种方式都需
+要应用程序主动的去查询设备的使用情况，如果能提供一种类似中断的机制，当驱动程序可以
+访问的时候主动告诉应用程序那就最好了。
+“信号”为此应运而生，信号类似于我们硬件上使用的“中断”，只不过信号是软件层次上
+的。算是在软件层次上对中断的一种模拟，驱动可以通过主动向应用程序发送信号的方式来报
+告自己可以访问了，应用程序获取到信号以后就可以从驱动设备中读取或者写入数据了。整个
+过程就相当于应用程序收到了驱动发送过来了的一个中断，然后应用程序去响应这个中断，在
+整个处理过程中应用程序并没有去查询驱动设备是否可以访问，一切都是由驱动设备自己告诉
+给应用程序的。
+阻塞、非阻塞、异步通知，这三种是针对不同的场合提出来的不同的解决方法，没有优劣
+之分，在实际的工作和学习中，根据自己的实际需求选择合适的处理方法即可。
+异步通知的核心就是信号，在 arch/xtensa/include/uapi/asm/signal.h 文件中定义了 Linux 所支
+持的所有信号，这些信号如下所示：
+示例代码 53.1.1.1 Linux 信号
+34 #define SIGHUP 1 /* 终端挂起或控制进程终止 */
+35 #define SIGINT 2 /* 终端中断(Ctrl+C 组合键) */
+36 #define SIGQUIT 3 /* 终端退出(Ctrl+\组合键) */
+37 #define SIGILL 4 /* 非法指令 */
+38 #define SIGTRAP 5 /* debug 使用，有断点指令产生 */
+39 #define SIGABRT 6 /* 由 abort(3)发出的退出指令 */
+40 #define SIGIOT 6 /* IOT 指令 */
+41 #define SIGBUS 7 /* 总线错误 */
+42 #define SIGFPE 8 /* 浮点运算错误 */
+43 #define SIGKILL 9 /* 杀死、终止进程 */
+44 #define SIGUSR1 10 /* 用户自定义信号 1 */
+45 #define SIGSEGV 11 /* 段违例(无效的内存段) */
+46 #define SIGUSR2 12 /* 用户自定义信号 2 */
+47 #define SIGPIPE 13 /* 向非读管道写入数据 */
+48 #define SIGALRM 14 /* 闹钟 */
+49 #define SIGTERM 15 /* 软件终止 */
+50 #define SIGSTKFLT 16 /* 栈异常 */
+51 #define SIGCHLD 17 /* 子进程结束 */
+52 #define SIGCONT 18 /* 进程继续 */
+53 #define SIGSTOP 19 /* 停止进程的执行，只是暂停 */
+54 #define SIGTSTP 20 /* 停止进程的运行(Ctrl+Z 组合键) */
+55 #define SIGTTIN 21 /* 后台进程需要从终端读取数据 */
+56 #define SIGTTOU 22 /* 后台进程需要向终端写数据 */
+57 #define SIGURG 23 /* 有"紧急"数据 */
+58 #define SIGXCPU 24 /* 超过 CPU 资源限制 */
+59 #define SIGXFSZ 25 /* 文件大小超额 */
+60 #define SIGVTALRM 26 /* 虚拟时钟信号 */
+61 #define SIGPROF 27 /* 时钟信号描述 */
+62 #define SIGWINCH 28 /* 窗口大小改变 */
+63 #define SIGIO 29 /* 可以进行输入/输出操作 */
+64 #define SIGPOLL SIGIO 
+65 /* #define SIGLOS 29 */
+66 #define SIGPWR 30 /* 断点重启 */
+67 #define SIGSYS 31 /* 非法的系统调用 */
+68 #define SIGUNUSED 31 /* 未使用信号 */
+ 在示例代码 53.1.1.1 中的这些信号中，除了 SIGKILL(9)和 SIGSTOP(19)这两个信号不能被
+忽略外，其他的信号都可以忽略。这些信号就相当于中断号，不同的中断号代表了不同的中断，
+不同的中断所做的处理不同，因此，驱动程序可以通过向应用程序发送不同的信号来实现不同
+的功能。
+我们使用中断的时候需要设置中断处理函数，同样的，如果要在应用程序中使用信号，那
+么就必须设置信号所使用的信号处理函数，在应用程序中使用 signal 函数来设置指定信号的处
+理函数，signal 函数原型如下所示：
+sighandler_t signal(int signum, sighandler_t handler)
+函数参数和返回值含义如下：
+signum：要设置处理函数的信号。
+handler：信号的处理函数。
+返回值：设置成功的话返回信号的前一个处理函数，设置失败的话返回 SIG_ERR。
+信号处理函数原型如下所示：
+typedef void (*sighandler_t)(int)
+我们前面讲解的使用“kill -9 PID”杀死指定进程的方法就是向指定的进程(PID)发送
+SIGKILL 这个信号。当按下键盘上的 CTRL+C 组合键以后会向当前正在占用终端的应用程序发
+出 SIGINT 信号，SIGINT 信号默认的动作是关闭当前应用程序。这里我们修改一下 SIGINT 信
+号的默认处理函数，当按下 CTRL+C 组合键以后先在终端上打印出“SIGINT signal！”这行字
+符串，然后再关闭当前应用程序。新建 signaltest.c 文件，然后输入如下所示内容：
+示例代码 53.1.1.2 信号测试
+1 #include "stdlib.h"
+2 #include "stdio.h"
+3 #include "signal.h"
+4 
+5 void sigint_handler(int num)
+6 {
+7 printf("\r\nSIGINT signal!\r\n");
+8 exit(0);
+9 }
+10
+11 int main(void)
+12 {
+13 signal(SIGINT, sigint_handler);
+14 while(1);
+15 return 0;
+16 }
+在示例代码 53.1.1.2 中我们设置 SIGINT 信号的处理函数为 sigint_handler，当按下 CTRL+C
+向 signaltest 发送 SIGINT 信号以后 sigint_handler 函数就会执行，此函数先输出一行“SIGINT 
+signal!”字符串，然后调用 exit 函数关闭 signaltest 应用程序。
+使用如下命令编译 signaltest.c：
+gcc signaltest.c -o signaltest
+然后输入“./signaltest”命令打开 signaltest 这个应用程序，然后按下键盘上的 CTRL+C 组
+合键，结果如图 53.1.1.1 所示：
+2、fasync 函数
+如果要使用异步通知，需要在设备驱动中实现 file_operations 操作集中的 fasync 函数，此
+函数格式如下所示：
+int (*fasync) (int fd, struct file *filp, int on)
+fasync 函数里面一般通过调用 fasync_helper 函数来初始化前面定义的 fasync_struct 结构体
+指针，fasync_helper 函数原型如下：
+int fasync_helper(int fd, struct file * filp, int on, struct fasync_struct **fapp)
+fasync_helper 函数的前三个参数就是 fasync 函数的那三个参数，第四个参数就是要初始化
+的 fasync_struct 结构体指针变量。当应用程序通过“fcntl(fd, F_SETFL, flags | FASYNC)”改变
+fasync 标记的时候，驱动程序 file_operations 操作集中的 fasync 函数就会执行。
+驱动程序中的 fasync 函数参考示例如下：
+示例代码 53.1.2.3 驱动中 fasync 函数参考示例
+1 struct xxx_dev {
+2 ......
+3 struct fasync_struct *async_queue; /* 异步相关结构体 */
+4 };
+5
+6 static int xxx_fasync(int fd, struct file *filp, int on)
+7 {
+8 struct xxx_dev *dev = (xxx_dev)filp->private_data;
+9 
+10 if (fasync_helper(fd, filp, on, &dev->async_queue) < 0)
+11 return -EIO;
+12 return 0;
+13 }
+14
+15 static struct file_operations xxx_ops = {
+16 ......
+17 .fasync = xxx_fasync,
+18 ......
+19 };
+在关闭驱动文件的时候需要在 file_operations 操作集中的 release 函数中释放 fasync_struct，
+fasync_struct 的释放函数同样为 fasync_helper，release 函数参数参考实例如下：
+示例代码 53.1.2.4 释放 fasync_struct 参考示例
+1 static int xxx_release(struct inode *inode, struct file *filp)
+2 {
+3 return xxx_fasync(-1, filp, 0); /* 删除异步通知 */
+4 }
+5
+6 static struct file_operations xxx_ops = {
+7 ......
+8 .release = xxx_release,
+9 };
+第 3 行通过调用示例代码 53.1.2.3 中的 xxx_fasync 函数来完成 fasync_struct 的释放工作，
+但是，其最终还是通过 fasync_helper 函数完成释放工作。
+1、kill_fasync 函数
+当设备可以访问的时候，驱动程序需要向应用程序发出信号，相当于产生“中断”。kill_fasync
+函数负责发送指定的信号，kill_fasync 函数原型如下所示：
+void kill_fasync(struct fasync_struct **fp, int sig, int band)
+函数参数和返回值含义如下：
+fp：要操作的 fasync_struct。
+sig：要发送的信号。
+band：可读时设置为 POLL_IN，可写时设置为 POLL_OUT。
+返回值：无。
+
+应用程序对异步通知的处理
+应用程序对异步通知的处理包括以下三步：
+1、注册信号处理函数
+应用程序根据驱动程序所使用的信号来设置信号的处理函数，应用程序使用 signal 函数来
+设置信号的处理函数。前面已经详细的讲过了，这里就不细讲了。
+2、将本应用程序的进程号告诉给内核
+使用 fcntl(fd, F_SETOWN, getpid())将本应用程序的进程号告诉给内核。
+3、开启异步通知
+使用如下两行程序开启异步通知：
+flags = fcntl(fd, F_GETFL); /* 获取当前的进程状态 */
+fcntl(fd, F_SETFL, flags | FASYNC); /* 开启当前进程异步通知功能 */
+重点就是通过 fcntl 函数设置进程状态为 FASYNC，经过这一步，驱动程序中的 fasync 函
+数就会执行。
+
+# PLATFORM驱动

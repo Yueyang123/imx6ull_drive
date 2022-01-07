@@ -1,0 +1,1 @@
+cmd_/home/yuri/SDK/IMX6ULL/DriverC/SIGNAL/asyncnoti.ko := arm-linux-gnueabihf-ld -EL -r  -T ./scripts/module-common.lds --build-id  -o /home/yuri/SDK/IMX6ULL/DriverC/SIGNAL/asyncnoti.ko /home/yuri/SDK/IMX6ULL/DriverC/SIGNAL/asyncnoti.o /home/yuri/SDK/IMX6ULL/DriverC/SIGNAL/asyncnoti.mod.o

@@ -1,0 +1,1 @@
+cmd_/home/yuri/SDK/IMX6ULL/DriverC/IRQ/imx6uirq.ko := arm-linux-gnueabihf-ld -EL -r  -T ./scripts/module-common.lds --build-id  -o /home/yuri/SDK/IMX6ULL/DriverC/IRQ/imx6uirq.ko /home/yuri/SDK/IMX6ULL/DriverC/IRQ/imx6uirq.o /home/yuri/SDK/IMX6ULL/DriverC/IRQ/imx6uirq.mod.o
